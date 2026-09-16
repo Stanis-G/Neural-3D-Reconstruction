@@ -1,0 +1,163 @@
+import argparse
+import os
+import yaml
+import json
+from types import SimpleNamespace
+from tqdm import tqdm
+
+import torch
+from torch import nn
+from torch.utils.data import DataLoader
+
+from dataset import NeRFDataset, sample_train_valid
+from model import NeRF
+
+
+def train(
+    model,
+    history,
+    train_dataloader,
+    valid_dataloader,
+    optimizer,
+    scheduler,
+    criterion,
+    device='cpu',
+):
+    model = model.to(device)
+
+    # Training
+    model.train()
+    train_loss = 0
+    for ray_origin, ray_direction, pixel_color in tqdm(
+        train_dataloader,
+        desc='Training',
+        leave=False,
+    ):
+        ray_origin = ray_origin.to(device)
+        ray_direction = ray_direction.to(device)
+        pixel_color = pixel_color.to(device)
+
+        optimizer.zero_grad()
+
+        color_pred = model(ray_origin, ray_direction)
+        loss = criterion(color_pred, pixel_color)
+
+        loss.backward()
+        optimizer.step()
+        scheduler.step()
+
+        train_loss += loss.item()
+
+    train_loss /= len(train_dataloader)
+
+    # Validation
+    model.eval()
+    valid_loss = 0
+    with torch.no_grad():
+        for ray_origin, ray_direction, pixel_color in tqdm(
+            valid_dataloader,
+            desc='Validation',
+            leave=False,
+        ):
+            ray_origin = ray_origin.to(device)
+            ray_direction = ray_direction.to(device)
+            pixel_color = pixel_color.to(device)
+
+            color_pred = model(ray_origin, ray_direction)
+            valid_loss += criterion(color_pred, pixel_color).item()
+
+    valid_loss /= len(valid_dataloader)
+
+    history["train_loss"].append(train_loss)
+    history["valid_loss"].append(valid_loss)
+
+    return model, history
+
+
+if __name__ == "__main__":
+
+    # Read path to config
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--config",
+        type=str,
+        required=True,
+        help="Path to config YAML file",
+    )
+    args = parser.parse_args()
+
+    # Upload config
+    with open(args.config) as f:
+        config = SimpleNamespace(**yaml.safe_load(f))
+
+    # Read file with image metadata
+    with open(os.path.join(config.data_dir, 'transforms.json'), "r", encoding="utf-8") as f:
+        meta = json.load(f)["frames"]
+
+    # Create train and validation datasets
+    meta_train, meta_valid = sample_train_valid(meta, valid_frac=config.valid_frac)
+
+    train_dataset = NeRFDataset(
+        data_dir=config.data_dir,
+        meta=meta_train,
+        num_rays_per_image=config.num_rays_per_image,
+        img_downsample=config.img_downsample,
+        seed=config.seed,
+    )
+    valid_dataset = NeRFDataset(
+        data_dir=config.data_dir,
+        meta=meta_valid,
+        num_rays_per_image=config.num_rays_per_image,
+        img_downsample=config.img_downsample,
+        seed=config.seed,
+    )
+
+    train_dataloader = DataLoader(dataset=train_dataset, batch_size=config.batch_size, shuffle=True)
+    valid_dataloader = DataLoader(dataset=valid_dataset, batch_size=config.batch_size, shuffle=False)
+
+    # Set model
+    model = NeRF(**config.nn_params)
+
+    # Set training params
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        **config.optimizer_params,
+    )
+
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(
+        optimizer=optimizer,
+        **config.scheduler_params,
+    )
+
+    criterion = nn.MSELoss()
+
+    # Start training
+    history = {"train_loss": [], "valid_loss": []}
+    model.cuda()
+    for epoch in tqdm(range(config.num_epochs), desc='Epochs'):
+        model, history = train(
+            model=model,
+            history=history,
+            train_dataloader=train_dataloader,
+            valid_dataloader=valid_dataloader,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            criterion=criterion,
+        )
+
+    # Save artifacts
+    if config.experiment_dir:
+
+        os.makedirs(config.experiment_dir, exist_ok=True)
+
+        # Save config
+        with open(os.path.join(config.experiment_dir, "config.yaml"), "w") as f:
+            yaml.safe_dump(vars(config), f, sort_keys=False)
+
+        # Save model
+        torch.save(model.state_dict(), os.path.join(config.experiment_dir, "model.pth"))
+
+        # Save history
+        history_path = os.path.join(config.experiment_dir, "history.json")
+        with open(history_path, "w") as f:
+            json.dump(history, f, indent=4)
