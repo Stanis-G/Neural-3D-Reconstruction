@@ -1,0 +1,23 @@
+# Dataset params
+data_dir: Path/to/dataset/dir
+num_rays_per_image: 16 # Number of rays to sample from each image
+img_downsample: 2 # Image downsampling factor
+
+# Neural net params
+nn_params:
+  num_pos_mlp_layers: 8 # Number of layers in positional encoder mlp
+  num_pos_mlp_layer_neurons: 256 # Number of neurons in inner layers of positional encoder mlp
+  num_color_mlp_layer_neurons: 128 # Number of neurons in inner layers of color predicting mlp
+  num_injection_layer: 5 # Index of a layer to inject coords positional encoding
+  negative_slope: 0.2 # Negative slope of LeakyReLU
+  num_samples: 16 # Number of points sampled along one ray
+  near: 2.0 # Near bound of a ray to sample a point
+  far: 6.0 # Far bound of a ray to sample a point
+  L_coords: 10 # L param for positional encoding of point coords. Defines positional encoding size of coords
+  L_direction: 4 # L param for positional encoding of point directions. Defines positional encoding size of directions
+
+
+# Additional params
+experiment_dir: Path/to/save/train/artifacts
+seed: 42 # Random seed
+device: cpu # Device for model inference

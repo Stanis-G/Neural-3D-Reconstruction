@@ -11,11 +11,11 @@ from torch.utils.data import DataLoader
 
 from dataset import NeRFDataset, sample_train_valid
 from model import NeRF
+from utils import create_experiment_dir, plot_history
 
 
 def train(
     model,
-    history,
     train_dataloader,
     valid_dataloader,
     optimizer,
@@ -68,10 +68,12 @@ def train(
 
     valid_loss /= len(valid_dataloader)
 
-    history["train_loss"].append(train_loss)
-    history["valid_loss"].append(valid_loss)
+    epoch_results = {
+        'train_loss': train_loss,
+        'valid_loss': valid_loss,
+    }
 
-    return model, history
+    return model, epoch_results
 
 
 if __name__ == "__main__":
@@ -132,23 +134,30 @@ if __name__ == "__main__":
     criterion = nn.MSELoss()
 
     # Start training
-    history = {"train_loss": [], "valid_loss": []}
+    history = {
+        "train_loss": [],
+        "valid_loss": [],
+    }
     model.cuda()
     for epoch in tqdm(range(config.num_epochs), desc='Epochs'):
-        model, history = train(
+        model, epoch_results = train(
             model=model,
-            history=history,
             train_dataloader=train_dataloader,
             valid_dataloader=valid_dataloader,
             optimizer=optimizer,
             scheduler=scheduler,
             criterion=criterion,
+            device=config.device,
         )
+
+        # Update history
+        for k, v in epoch_results.items():
+            history[k].append(v)
 
     # Save artifacts
     if config.experiment_dir:
 
-        os.makedirs(config.experiment_dir, exist_ok=True)
+        create_experiment_dir(config.experiment_dir)
 
         # Save config
         with open(os.path.join(config.experiment_dir, "config.yaml"), "w") as f:
@@ -161,3 +170,6 @@ if __name__ == "__main__":
         history_path = os.path.join(config.experiment_dir, "history.json")
         with open(history_path, "w") as f:
             json.dump(history, f, indent=4)
+
+        # Save history plot
+        plot_history(history=history, save_fig=os.path.join(config.experiment_dir, 'history.png'))
