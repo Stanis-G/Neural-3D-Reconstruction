@@ -1,9 +1,11 @@
 # Dataset params
 data_dir: Path/to/dataset/dir
-num_rays_per_image: 16 # Number of rays to sample from each image
+width: 800 # Original image width used during training
+height: 600 # Original image height used during training
 img_downsample: 2 # Image downsampling factor
 
 # Neural net params
+model_path: Path/to/model/state
 nn_params:
   num_pos_mlp_layers: 8 # Number of layers in positional encoder mlp
   num_pos_mlp_layer_neurons: 256 # Number of neurons in inner layers of positional encoder mlp
@@ -16,8 +18,10 @@ nn_params:
   L_coords: 10 # L param for positional encoding of point coords. Defines positional encoding size of coords
   L_direction: 4 # L param for positional encoding of point directions. Defines positional encoding size of directions
 
+# Inference params
+batch_size: 8
+device: cpu # Device for model inference
 
 # Additional params
-experiment_dir: Path/to/save/train/artifacts
+render_dir: Path/to/save/rendered/images
 seed: 42 # Random seed
-device: cpu # Device for model inference

@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 
 from dataset import NeRFDataset, sample_train_valid
 from model import NeRF
-from utils import create_experiment_dir, plot_history
+from utils import create_result_dir, plot_history
 
 
 def train(
@@ -155,21 +155,19 @@ if __name__ == "__main__":
             history[k].append(v)
 
     # Save artifacts
-    if config.experiment_dir:
+    create_result_dir(config.experiment_dir)
 
-        create_experiment_dir(config.experiment_dir)
+    # Save config
+    with open(os.path.join(config.experiment_dir, "config.yaml"), "w") as f:
+        yaml.safe_dump(vars(config), f, sort_keys=False)
 
-        # Save config
-        with open(os.path.join(config.experiment_dir, "config.yaml"), "w") as f:
-            yaml.safe_dump(vars(config), f, sort_keys=False)
+    # Save model
+    torch.save(model.state_dict(), os.path.join(config.experiment_dir, "model.pth"))
 
-        # Save model
-        torch.save(model.state_dict(), os.path.join(config.experiment_dir, "model.pth"))
+    # Save history
+    history_path = os.path.join(config.experiment_dir, "history.json")
+    with open(history_path, "w") as f:
+        json.dump(history, f, indent=4)
 
-        # Save history
-        history_path = os.path.join(config.experiment_dir, "history.json")
-        with open(history_path, "w") as f:
-            json.dump(history, f, indent=4)
-
-        # Save history plot
-        plot_history(history=history, save_fig=os.path.join(config.experiment_dir, 'history.png'))
+    # Save history plot
+    plot_history(history=history, save_fig=os.path.join(config.experiment_dir, 'history.png'))

@@ -2,7 +2,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 
-def create_experiment_dir(path: str | Path) -> Path:
+def create_result_dir(path: str | Path) -> Path:
     path = Path(path)
 
     if not path.exists():

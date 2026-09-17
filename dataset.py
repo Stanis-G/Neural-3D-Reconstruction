@@ -6,6 +6,124 @@ from torchvision.transforms.functional import pil_to_tensor
 from torch.utils.data import Dataset
 
 
+def pixel_to_camera_rays(pixel_coords, camera_params):
+    """
+    Convert pixel coordinates into camera-space ray directions.
+
+    Args:
+        pixel_coords: Pixel coordinates, shape (..., 2), where
+            the last dimension contains (x, y).
+        camera_params: Camera parameters.
+
+    Returns:
+        camera_directions: Camera-space ray directions, shape (..., 3).
+    """
+    fx = camera_params["fl_x"]
+    fy = camera_params["fl_y"]
+    w = camera_params["w"]
+    h = camera_params["h"]
+
+    x = pixel_coords[..., 0]
+    y = pixel_coords[..., 1]
+
+    # Principal point
+    cx = w / 2
+    cy = h / 2
+
+    # Pixel -> camera space
+    camera_directions = torch.stack(
+        [
+            (x - cx) / fx,
+            -(y - cy) / fy,
+            -torch.ones_like(x),
+        ],
+        dim=-1,
+    )
+
+    return camera_directions
+
+
+def camera_to_world_rays(camera_directions, camera_params):
+    """
+    Convert camera-space ray directions into world-space rays.
+
+    Args:
+        camera_directions: Camera-space ray directions, shape (..., 3).
+        camera_params: Camera parameters.
+
+    Returns:
+        ray_origins: Ray origins, shape (..., 3).
+        ray_directions: Normalized world-space ray directions, shape (..., 3).
+    """
+    transform = torch.tensor(
+        camera_params["transform_matrix"],
+        dtype=torch.float32,
+    )
+
+    R = transform[:3, :3]
+    origin = transform[:3, 3]
+
+    # Camera space -> world space
+    ray_directions = camera_directions @ R.T
+
+    # Normalize directions
+    ray_directions = ray_directions / torch.linalg.norm(
+        ray_directions,
+        dim=-1,
+        keepdim=True,
+    )
+
+    # Same origin for every ray
+    ray_origins = origin.expand_as(ray_directions)
+
+    return ray_origins, ray_directions
+
+
+def generate_rays(camera_params):
+    """
+    Generate rays for every pixel in an image
+
+    Args:
+        camera_params: Camera parameters
+
+    Returns:
+        ray_origins: Shape (H * W, 3).
+        ray_directions: Shape (H * W, 3).
+    """
+    w = camera_params["w"]
+    h = camera_params["h"]
+
+    # Generate pixel coordinates
+    y, x = torch.meshgrid(
+        torch.arange(h, dtype=torch.float32),
+        torch.arange(w, dtype=torch.float32),
+        indexing="ij",
+    )
+
+    pixel_coords = torch.stack(
+        [x, y],
+        dim=-1,
+    )  # (H, W, 2)
+
+    # Pixel -> camera space
+    camera_directions = pixel_to_camera_rays(
+        pixel_coords,
+        camera_params,
+    )
+
+    # Camera space -> world space
+    ray_origins, ray_directions = camera_to_world_rays(
+        camera_directions,
+        camera_params,
+    )
+
+    # Flatten image dimensions
+    ray_origins = ray_origins.reshape(-1, 3)
+    ray_directions = ray_directions.reshape(-1, 3)
+
+    return ray_origins, ray_directions
+
+
 class NeRFDataset(Dataset):
 
     def __init__(
@@ -18,6 +136,8 @@ class NeRFDataset(Dataset):
     ):
         """
         Build NeRF dataset and precompute camera ray directions.
+
+        One dataset item is one ray
 
         Args:
             data_dir: folder containing `transforms.json` and frame images
@@ -95,7 +215,7 @@ class NeRFDataset(Dataset):
 
             # Extract and modify camera instrinsics for sampled pixels (since downsampling is applied to image)
             camera_params = {
-                'transform': frame['transform_matrix'],
+                'transform_matrix': frame['transform_matrix'],
                 'camera_angle_x': frame['camera_angle_x'],
                 'camera_angle_y': frame['camera_angle_y'],
                 'fl_x': frame['fl_x'] / self.img_downsample,
@@ -110,49 +230,9 @@ class NeRFDataset(Dataset):
         return torch.stack(ray_pixels), torch.stack(pixel_colors).transpose(1, 2), all_camera_params
 
 
-    def pixel2ray(self, pixel_coords, camera_params):
-        """Convert pixel coords into ray origin and direction using camera position and intrinsics"""
-        x, y = pixel_coords
-
-        fx = camera_params["fl_x"]
-        fy = camera_params["fl_y"]
-        w = camera_params["w"]
-        h = camera_params["h"]
-
-        # Principal point
-        cx = w / 2
-        cy = h / 2
-
-        # Pixel -> camera space
-        camera_direction = torch.tensor( # direction relative to the camera
-            [
-                (x - cx) / fx,
-                -(y - cy) / fy,
-                -1.0,
-            ],
-        dtype=torch.float32,
-        )
-
-        # Camera-to-world transform
-        transform = torch.tensor(
-            camera_params['transform'],
-            dtype=torch.float32,
-        )
-
-        R = transform[:3, :3]
-        origin = transform[:3, 3] # 3D position where ray starts (camera position)
-
-        # Camera direction -> world direction
-        world_direction = R @ camera_direction
-
-        # Normalize (divide by the vector length)
-        world_direction = world_direction / torch.linalg.norm(world_direction)
-
-        return origin, world_direction
-
-
     def __getitem__(self, index):
         """Sampling ray origin, direction and color"""
+
         # Sample pixel from tensor of shape (n_images, num_rays_per_images, coords) using single value index
         image_idx = index // self.num_rays_per_image
         ray_idx = index % self.num_rays_per_image
@@ -164,10 +244,17 @@ class NeRFDataset(Dataset):
         # Extract camera params
         camera_params = self.all_camera_params[image_idx]
 
-        # Convert pixel coords and camera params to ray origin point and direction
-        origin, world_direction = self.pixel2ray(pixel_coords, camera_params)
+        camera_direction = pixel_to_camera_rays(
+            pixel_coords,
+            camera_params,
+        )
 
-        return origin, world_direction, pixel_color
+        ray_origin, ray_direction = camera_to_world_rays(
+            camera_direction,
+            camera_params,
+        )
+
+        return ray_origin, ray_direction, pixel_color
 
 
     def __len__(self):
@@ -177,8 +264,8 @@ class NeRFDataset(Dataset):
 
 
 def sample_points_on_ray(
-    ray_origin: torch.Tensor,
-    ray_direction: torch.Tensor,
+    ray_origins: torch.Tensor,
+    ray_directions: torch.Tensor,
     near: float,
     far: float,
     num_samples: int,
@@ -187,8 +274,8 @@ def sample_points_on_ray(
     Sample 3D points along a ray.
 
     Args:
-        ray_origin: Ray origin, shape (batch, 3)
-        ray_direction: Ray direction, shape (batch, 3)
+        ray_origins: Ray origins, shape (batch, 3)
+        ray_directions: Ray directions, shape (batch, 3)
         near: Near bound
         far: Far bound
         num_samples: Number of points to sample per ray
@@ -202,16 +289,16 @@ def sample_points_on_ray(
         near,
         far,
         num_samples,
-        device=ray_origin.device,
+        device=ray_origins.device,
     )
 
     # Convert dimensions
     t = t[None, :, None]
-    ray_origin = ray_origin[:, None, :]
-    ray_direction = ray_direction[:, None, :]
+    ray_origins = ray_origins[:, None, :]
+    ray_directions = ray_directions[:, None, :]
 
     # Retrieve coords of points at sampled distances along a ray
-    points = ray_origin + t * ray_direction
+    points = ray_origins + t * ray_directions
     return points
 
 
