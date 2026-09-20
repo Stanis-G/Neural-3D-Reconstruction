@@ -1,7 +1,7 @@
 # Dataset params
 data_dir: Path/to/dataset/dir
-width: 800 # Original image width used during training
-height: 600 # Original image height used during training
+width: 1920 # Original image width used during training
+height: 1080 # Original image height used during training
 img_downsample: 2 # Image downsampling factor
 
 # Neural net params

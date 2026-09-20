@@ -11,13 +11,13 @@ from torch.utils.data import DataLoader
 
 from dataset import NeRFDataset, sample_train_valid
 from model import NeRF
+from render import render_frames
 from utils import create_result_dir, plot_history
 
 
 def train(
     model,
-    train_dataloader,
-    valid_dataloader,
+    dataloader,
     optimizer,
     scheduler,
     criterion,
@@ -25,11 +25,10 @@ def train(
 ):
     model = model.to(device)
 
-    # Training
     model.train()
     train_loss = 0
     for ray_origin, ray_direction, pixel_color in tqdm(
-        train_dataloader,
+        dataloader,
         desc='Training',
         leave=False,
     ):
@@ -48,14 +47,24 @@ def train(
 
         train_loss += loss.item()
 
-    train_loss /= len(train_dataloader)
+    train_loss /= len(dataloader)
 
-    # Validation
+    return model, train_loss
+
+
+def validate(
+    model,
+    dataloader,
+    criterion,
+    device='cpu',
+):
+    model = model.to(device)
+    
     model.eval()
     valid_loss = 0
     with torch.no_grad():
         for ray_origin, ray_direction, pixel_color in tqdm(
-            valid_dataloader,
+            dataloader,
             desc='Validation',
             leave=False,
         ):
@@ -66,14 +75,9 @@ def train(
             color_pred = model(ray_origin, ray_direction)
             valid_loss += criterion(color_pred, pixel_color).item()
 
-    valid_loss /= len(valid_dataloader)
+    valid_loss /= len(dataloader)
 
-    epoch_results = {
-        'train_loss': train_loss,
-        'valid_loss': valid_loss,
-    }
-
-    return model, epoch_results
+    return valid_loss
 
 
 if __name__ == "__main__":
@@ -134,40 +138,59 @@ if __name__ == "__main__":
     criterion = nn.MSELoss()
 
     # Start training
+    experiment_dir = create_result_dir(config.experiment_dir)
     history = {
         "train_loss": [],
         "valid_loss": [],
     }
     model.cuda()
     for epoch in tqdm(range(config.num_epochs), desc='Epochs'):
-        model, epoch_results = train(
+        model, train_loss = train(
             model=model,
-            train_dataloader=train_dataloader,
-            valid_dataloader=valid_dataloader,
+            dataloader=train_dataloader,
             optimizer=optimizer,
             scheduler=scheduler,
             criterion=criterion,
             device=config.device,
         )
+        valid_loss = validate(
+            model=model,
+            dataloader=valid_dataloader,
+            criterion=criterion,
+            device=config.device,            
+        )
+        epoch_results = {
+            "train_loss": train_loss,
+            "valid_loss": valid_loss,
+        }
 
         # Update history
         for k, v in epoch_results.items():
             history[k].append(v)
 
-    # Save artifacts
-    create_result_dir(config.experiment_dir)
+        # Render and save validation images
+        if epoch >= config.render_from and epoch % config.render_every == 0:
+            render_dir = os.path.join(experiment_dir, 'renders', f'epoch_{epoch}')
+            os.makedirs(render_dir, exist_ok=True)
+            render_frames(
+                model=model,
+                meta=meta_valid[:config.render_num_images],
+                batch_size=config.render_batch_size,
+                img_downsample=config.img_downsample,
+                render_dir=render_dir,
+            )
 
     # Save config
-    with open(os.path.join(config.experiment_dir, "config.yaml"), "w") as f:
+    with open(os.path.join(experiment_dir, "config.yaml"), "w") as f:
         yaml.safe_dump(vars(config), f, sort_keys=False)
 
     # Save model
-    torch.save(model.state_dict(), os.path.join(config.experiment_dir, "model.pth"))
+    torch.save(model.state_dict(), os.path.join(experiment_dir, "model.pth"))
 
     # Save history
-    history_path = os.path.join(config.experiment_dir, "history.json")
+    history_path = os.path.join(experiment_dir, "history.json")
     with open(history_path, "w") as f:
         json.dump(history, f, indent=4)
 
     # Save history plot
-    plot_history(history=history, save_fig=os.path.join(config.experiment_dir, 'history.png'))
+    plot_history(history=history, save_fig=os.path.join(experiment_dir, 'history.png'))

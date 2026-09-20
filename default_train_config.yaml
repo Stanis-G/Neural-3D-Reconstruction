@@ -19,12 +19,18 @@ nn_params:
 
 # Training params
 num_epochs: 10 # Number of training epochs
-batch_size: 8
+batch_size: 8 # Number of rays to process at a time
 device: cpu # Device for training model
 optimizer_params:
   lr: 0.001 # Learning rate
 scheduler_params:
   gamma: 0.99
+
+# Render params
+render_batch_size: 8 # Number of rays processed simultaneously during rendering
+render_num_images: 3 # Number of validation images to render
+render_from: 2 # First epoch from which validation images are rendered
+render_every: 5 # Render validation images every N epochs
 
 # Additional params
 experiment_dir: Path/to/save/train/artifacts
