@@ -124,7 +124,7 @@ class NeRF(nn.Module):
                 out_features=1, # return 1 density per point
                 bias=True,
             ),
-            nn.ReLU(),
+            nn.Softplus(),
         )
 
         self.color_mlp = nn.Sequential(

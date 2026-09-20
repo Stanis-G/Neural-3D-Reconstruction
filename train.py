@@ -19,7 +19,6 @@ def train(
     model,
     dataloader,
     optimizer,
-    scheduler,
     criterion,
     device='cpu',
 ):
@@ -43,7 +42,6 @@ def train(
 
         loss.backward()
         optimizer.step()
-        scheduler.step()
 
         train_loss += loss.item()
 
@@ -144,12 +142,11 @@ if __name__ == "__main__":
         "valid_loss": [],
     }
     model.cuda()
-    for epoch in tqdm(range(config.num_epochs), desc='Epochs'):
+    for epoch in tqdm(range(1, config.num_epochs + 1), desc='Epochs'):
         model, train_loss = train(
             model=model,
             dataloader=train_dataloader,
             optimizer=optimizer,
-            scheduler=scheduler,
             criterion=criterion,
             device=config.device,
         )
@@ -159,6 +156,7 @@ if __name__ == "__main__":
             criterion=criterion,
             device=config.device,            
         )
+        scheduler.step()
         epoch_results = {
             "train_loss": train_loss,
             "valid_loss": valid_loss,
