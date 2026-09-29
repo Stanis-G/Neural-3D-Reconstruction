@@ -160,6 +160,9 @@ if __name__ == "__main__":
     }
     model.cuda()
     for epoch in tqdm(range(1, config.num_epochs + 1), desc='Epochs'):
+        # Sample new rays/pixels from the images
+        train_dataset.resample(epoch)
+        valid_dataset.resample(epoch)
         model, train_loss = train(
             model=model,
             dataloader=train_dataloader,
@@ -191,14 +194,14 @@ if __name__ == "__main__":
             os.makedirs(valid_render_dir, exist_ok=True)
             render_frames(
                 model=model,
-                meta=meta_valid[:config.render_num_images],
+                meta=meta_train[:config.render_num_images],
                 batch_size=config.render_batch_size,
                 img_downsample=config.img_downsample,
                 render_dir=train_render_dir,
             )
             render_frames(
                 model=model,
-                meta=meta_train[:config.render_num_images],
+                meta=meta_valid[:config.render_num_images],
                 batch_size=config.render_batch_size,
                 img_downsample=config.img_downsample,
                 render_dir=valid_render_dir,

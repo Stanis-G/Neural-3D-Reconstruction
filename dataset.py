@@ -152,18 +152,12 @@ class NeRFDataset(Dataset):
         self.img_downsample = img_downsample
         self.seed = seed
 
-        # Generate sampled pixel coordinates of shape (n_images, num_rays_per_image, 2)
-        # 2 means x and y coordinates of a pixel
-        # Generate sampled pixel colors of shape (n_images, num_rays_per_image, 3)
-        # Get modified camera params
-        self.ray_pixels, self.pixel_colors, self.all_camera_params = self._sample_pixels()
 
-
-    def _sample_pixels(self):
+    def _sample_pixels(self, seed):
         """Randomly sample pixel coordinates and colors from each image"""
 
         generator = torch.Generator()
-        generator.manual_seed(self.seed)
+        generator.manual_seed(seed)
 
         ray_pixels = []
         pixel_colors = []
@@ -228,6 +222,17 @@ class NeRFDataset(Dataset):
 
         # Return tensors of sampled pixels and modified camera params
         return torch.stack(ray_pixels), torch.stack(pixel_colors).transpose(1, 2), all_camera_params
+
+
+    def resample(self, epoch):
+        """Resample pixels for all images for a new training epoch"""
+        seed = self.seed + epoch
+
+        # Generate sampled pixel coordinates of shape (n_images, num_rays_per_image, 2)
+        # 2 means x and y coordinates of a pixel
+        # Generate sampled pixel colors of shape (n_images, num_rays_per_image, 3)
+        # Get modified camera params
+        self.ray_pixels, self.pixel_colors, self.all_camera_params = self._sample_pixels(seed)
 
 
     def __getitem__(self, index):
