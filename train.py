@@ -2,6 +2,7 @@ import argparse
 import os
 import yaml
 import json
+from PIL import Image
 from types import SimpleNamespace
 from tqdm import tqdm
 
@@ -135,8 +136,24 @@ if __name__ == "__main__":
 
     criterion = nn.MSELoss()
 
-    # Start training
+    # Create dir with experiment results
     experiment_dir = create_result_dir(config.experiment_dir)
+
+    # Save original training images for visual comparison with renders
+    train_original_dir = os.path.join(experiment_dir, 'renders_train', 'original')
+    os.makedirs(train_original_dir, exist_ok=True)
+    for i, frame in enumerate(meta_train[:config.render_num_images]):
+        image = Image.open(os.path.join(config.data_dir, frame['file_path']))
+        image.save(os.path.join(train_original_dir, f"original_{i:04d}.png"))
+
+    # Save original validation images for visual comparison with renders
+    valid_original_dir = os.path.join(experiment_dir, 'renders_valid', 'original')
+    os.makedirs(valid_original_dir, exist_ok=True)
+    for i, frame in enumerate(meta_valid[:config.render_num_images]):
+        image = Image.open(os.path.join(config.data_dir, frame['file_path']))
+        image.save(os.path.join(valid_original_dir, f"original_{i:04d}.png"))
+
+    # Start training
     history = {
         "train_loss": [],
         "valid_loss": [],
@@ -168,14 +185,23 @@ if __name__ == "__main__":
 
         # Render and save validation images
         if epoch >= config.render_from and epoch % config.render_every == 0:
-            render_dir = os.path.join(experiment_dir, 'renders', f'epoch_{epoch}')
-            os.makedirs(render_dir, exist_ok=True)
+            train_render_dir = os.path.join(experiment_dir, 'renders_train', f'epoch_{epoch}')
+            valid_render_dir = os.path.join(experiment_dir, 'renders_valid', f'epoch_{epoch}')
+            os.makedirs(train_render_dir, exist_ok=True)
+            os.makedirs(valid_render_dir, exist_ok=True)
             render_frames(
                 model=model,
                 meta=meta_valid[:config.render_num_images],
                 batch_size=config.render_batch_size,
                 img_downsample=config.img_downsample,
-                render_dir=render_dir,
+                render_dir=train_render_dir,
+            )
+            render_frames(
+                model=model,
+                meta=meta_train[:config.render_num_images],
+                batch_size=config.render_batch_size,
+                img_downsample=config.img_downsample,
+                render_dir=valid_render_dir,
             )
 
     # Save config

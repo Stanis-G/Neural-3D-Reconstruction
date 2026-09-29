@@ -61,7 +61,7 @@ def render_frames(
     width=None,
     height=None,
 ):
-    for frame_idx, frame in tqdm(enumerate(meta), total=len(meta), desc='Frames'):
+    for frame_idx, frame in tqdm(enumerate(meta), total=len(meta), desc='Frames', leave=False):
         frame_width = width or frame['w']
         frame_height = height or frame['h']
         camera_params = {
