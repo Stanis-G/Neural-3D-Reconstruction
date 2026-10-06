@@ -21,6 +21,7 @@ def train(
     dataloader,
     optimizer,
     criterion,
+    alpha_loss_weight,
     device='cpu',
 ):
     model = model.to(device)
@@ -36,10 +37,27 @@ def train(
         ray_direction = ray_direction.to(device)
         pixel_color = pixel_color.to(device)
 
+        pixel_rgb = pixel_color[:, :3]
+        pixel_alpha = pixel_color[:, 3]
+
         optimizer.zero_grad()
 
-        color_pred = model(ray_origin, ray_direction)
-        loss = criterion(color_pred, pixel_color)
+        color_pred, opacity_pred = model(ray_origin, ray_direction)
+        rgb_loss = criterion(color_pred, pixel_rgb)
+
+        # Average RGB channels loss
+        rgb_loss = rgb_loss.mean(dim=-1)
+
+        # Calculate color prediction loss, excluding adding loss for transparent pixels
+        rgb_loss = (
+            rgb_loss * pixel_alpha
+        ).sum() / (pixel_alpha.sum() + 1e-8)
+
+        # Calculate alpha prediciton loss
+        alpha_loss = criterion(opacity_pred, pixel_alpha).mean()
+
+        # Combine loss
+        loss = rgb_loss + alpha_loss_weight * alpha_loss
 
         loss.backward()
         optimizer.step()
@@ -55,6 +73,7 @@ def validate(
     model,
     dataloader,
     criterion,
+    alpha_loss_weight,
     device='cpu',
 ):
     model = model.to(device)
@@ -71,8 +90,27 @@ def validate(
             ray_direction = ray_direction.to(device)
             pixel_color = pixel_color.to(device)
 
-            color_pred = model(ray_origin, ray_direction)
-            valid_loss += criterion(color_pred, pixel_color).item()
+            pixel_rgb = pixel_color[:, :3]
+            pixel_alpha = pixel_color[:, 3]
+
+            color_pred, opacity_pred = model(ray_origin, ray_direction)
+            rgb_loss = criterion(color_pred, pixel_rgb)
+
+            # Average RGB channels loss
+            rgb_loss = rgb_loss.mean(dim=-1)
+
+            # Calculate color prediction loss, excluding adding loss for transparent pixels
+            rgb_loss = (
+                rgb_loss * pixel_alpha
+            ).sum() / (pixel_alpha.sum() + 1e-8)
+
+            # Calculate alpha prediciton loss
+            alpha_loss = criterion(opacity_pred, pixel_alpha).mean()
+    
+            # Combine loss
+            loss = rgb_loss + alpha_loss_weight * alpha_loss
+
+            valid_loss += loss.item()
 
     valid_loss /= len(dataloader)
 
@@ -146,10 +184,7 @@ if __name__ == "__main__":
         **config.scheduler_params,
     )
 
-    criterion = nn.MSELoss()
-
-    # Create dir with experiment results
-    experiment_dir = create_result_dir(config.experiment_dir)
+    criterion = nn.MSELoss(reduction='none')
 
     # Save original training images for visual comparison with renders
     train_original_dir = os.path.join(experiment_dir, 'renders_train', 'original')
@@ -180,12 +215,14 @@ if __name__ == "__main__":
             dataloader=train_dataloader,
             optimizer=optimizer,
             criterion=criterion,
+            alpha_loss_weight=config.alpha_loss_weight,
             device=config.device,
         )
         valid_loss = validate(
             model=model,
             dataloader=valid_dataloader,
             criterion=criterion,
+            alpha_loss_weight=config.alpha_loss_weight,
             device=config.device,            
         )
         scheduler.step()
@@ -220,17 +257,5 @@ if __name__ == "__main__":
                 render_dir=valid_render_dir,
             )
 
-    # Save config
-    with open(os.path.join(experiment_dir, "config.yaml"), "w") as f:
-        yaml.safe_dump(vars(config), f, sort_keys=False)
-
     # Save model
     torch.save(model.state_dict(), os.path.join(experiment_dir, "model.pth"))
-
-    # Save history
-    history_path = os.path.join(experiment_dir, "history.json")
-    with open(history_path, "w") as f:
-        json.dump(history, f, indent=4)
-
-    # Save history plot
-    plot_history(history=history, save_fig=os.path.join(experiment_dir, 'history.png'))

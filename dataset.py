@@ -201,8 +201,7 @@ class NeRFDataset(Dataset):
             pixels = torch.stack((xs, ys), dim=1)
 
             # Extract RGB colors for pixels of current image [C, num_rays_per_image]
-            # Remove alpha channel of image
-            colors = image_tensor[:3, ys, xs]
+            colors = image_tensor[:, ys, xs]
 
             ray_pixels.append(pixels)
             pixel_colors.append(colors)

@@ -1,8 +1,8 @@
 import os
+from PIL import Image
 from tqdm import tqdm
 
 import torch
-from torchvision.io import write_png
 
 from dataset import generate_rays
 
@@ -23,6 +23,7 @@ def render_image(
     ray_directions = ray_directions.to(device)
 
     rendered_pixels = []
+    rendered_opacities = []
 
     # Process rays in batches
     for start in tqdm(
@@ -35,18 +36,28 @@ def render_image(
         directions = ray_directions[start:start + batch_size]
 
         # Run model
-        pixel_colors = model(origins, directions)
+        pixel_colors, pixel_opacities = model(origins, directions)
 
         rendered_pixels.append(pixel_colors.cpu())
+        rendered_opacities.append(pixel_opacities.cpu())
 
-    # Combine batches to shape (H * W, 3)
+    # Combine batches to shape (H * W, 3) for colors and (H * W) for opacities
     rendered_pixels = torch.cat(rendered_pixels, dim=0)
+    rendered_opacities = torch.cat(rendered_opacities, dim=0)
+
+    h = camera_params["h"]
+    w = camera_params["w"]
 
     # Convert (H * W, 3) -> (H, W, 3)
-    image = rendered_pixels.reshape(
-        camera_params["h"],
-        camera_params["w"],
-        3,
+    image = rendered_pixels.reshape(h, w, 3)
+
+    # Convert (H * W) -> (H, W)
+    opacity = rendered_opacities.reshape(h, w)
+
+    # Combine RGB + opacity -> RGBA
+    image = torch.cat(
+        [image, opacity.unsqueeze(-1)],
+        dim=-1,
     )
 
     return image.clamp(0, 1)
@@ -80,7 +91,9 @@ def render_frames(
         )
 
         # Convert [0, 1] -> [0, 255]
-        write_png(
-            (image * 255).byte().permute(2, 0, 1),
-            os.path.join(render_dir, f"render_{frame_idx:04d}.png"),
-        )
+        image_uint8 = (image * 255).byte()
+        save_path = os.path.join(render_dir, f"render_{frame_idx:04d}.png")
+        Image.fromarray(
+            image_uint8.cpu().numpy(),
+            mode="RGBA",
+        ).save(save_path)

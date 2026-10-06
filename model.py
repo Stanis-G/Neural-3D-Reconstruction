@@ -26,16 +26,17 @@ def volume_rendering(points, densities, colors):
         colors: colors of points along a ray, shape (N_samples, 3)
 
     Returns:
-        rgb color, shape (3)
+        rgb:     (batch, 3)
+        opacity: (batch,)
     """
     # Calculate distances between neighboring points
-    delta = points[:, 1:] - points[:, :-1] # (Batch, N_samples-1, 3)
+    delta = points[:, 1:] - points[:, :-1] # (Batch, N_samples-1, C)
 
     # Convert vectors into distances between points
     delta = torch.linalg.norm(delta, dim=-1) # (Batch, N_samples-1)
 
     # Add last interval to delta: a distance to infinite point
-    last_delta = torch.full_like(delta[:, :1], 1e10)
+    last_delta = delta[:, -1:]
 
     delta = torch.cat([delta, last_delta], dim=1) # (Batch, N_samples)
 
@@ -54,9 +55,10 @@ def volume_rendering(points, densities, colors):
 
     weights = transmittance * alpha # (Batch, N_samples)
 
-    # Calculate pixel color
-    rgb = torch.sum(weights[..., None] * colors, dim=1) # (Batch, 3)
-    return rgb
+    # Calculate pixel color and opacity
+    rgb = torch.sum(weights[..., None] * colors, dim=1) # (Batch, C)
+    opacity = weights.sum(dim=1)
+    return rgb, opacity
 
 
 class NeRF(nn.Module):
@@ -180,5 +182,5 @@ class NeRF(nn.Module):
         feature_vector = torch.cat([coords_feature_vector, dir_encoding], dim=-1)
         colors = self.color_mlp(feature_vector)
 
-        pixel_color = volume_rendering(points, densities, colors)
-        return pixel_color
+        pixel_color, opacity = volume_rendering(points, densities, colors)
+        return pixel_color, opacity
