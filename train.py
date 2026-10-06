@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 from dataset import NeRFDataset, sample_train_valid
 from model import NeRF
 from render import render_frames
-from utils import create_result_dir, plot_history
+from utils import create_result_dir, save_history, plot_camera_poses
 
 
 def train(
@@ -95,12 +95,24 @@ if __name__ == "__main__":
     with open(args.config) as f:
         config = SimpleNamespace(**yaml.safe_load(f))
 
+    # Create dir with experiment results
+    experiment_dir = create_result_dir(config.experiment_dir)
+
+    # Save config
+    with open(os.path.join(experiment_dir, "config.yaml"), "w") as f:
+        yaml.safe_dump(vars(config), f, sort_keys=False)
+
     # Read file with image metadata
     with open(os.path.join(config.data_dir, 'transforms.json'), "r", encoding="utf-8") as f:
         meta = json.load(f)["frames"]
 
     # Create train and validation datasets
     meta_train, meta_valid = sample_train_valid(meta, valid_frac=config.valid_frac)
+    plot_camera_poses(
+        meta_train,
+        meta_valid,
+        experiment_dir=experiment_dir,
+    )
 
     train_dataset = NeRFDataset(
         data_dir=config.data_dir,
@@ -185,6 +197,7 @@ if __name__ == "__main__":
         # Update history
         for k, v in epoch_results.items():
             history[k].append(v)
+        save_history(history=history, experiment_dir=experiment_dir)
 
         # Render and save validation images
         if epoch >= config.render_from and epoch % config.render_every == 0:
