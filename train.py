@@ -220,17 +220,5 @@ if __name__ == "__main__":
                 render_dir=valid_render_dir,
             )
 
-    # Save config
-    with open(os.path.join(experiment_dir, "config.yaml"), "w") as f:
-        yaml.safe_dump(vars(config), f, sort_keys=False)
-
     # Save model
     torch.save(model.state_dict(), os.path.join(experiment_dir, "model.pth"))
-
-    # Save history
-    history_path = os.path.join(experiment_dir, "history.json")
-    with open(history_path, "w") as f:
-        json.dump(history, f, indent=4)
-
-    # Save history plot
-    plot_history(history=history, save_fig=os.path.join(experiment_dir, 'history.png'))
