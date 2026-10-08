@@ -148,9 +148,6 @@ if __name__ == "__main__":
 
     criterion = nn.MSELoss()
 
-    # Create dir with experiment results
-    experiment_dir = create_result_dir(config.experiment_dir)
-
     # Save original training images for visual comparison with renders
     train_original_dir = os.path.join(experiment_dir, 'renders_train', 'original')
     os.makedirs(train_original_dir, exist_ok=True)
@@ -173,8 +170,8 @@ if __name__ == "__main__":
     model.cuda()
     for epoch in tqdm(range(1, config.num_epochs + 1), desc='Epochs'):
         # Sample new rays/pixels from the images
-        train_dataset.resample(epoch)
-        valid_dataset.resample(epoch)
+        train_dataset.resample(epoch, config.sample_strategy, config.sampler_params)
+        valid_dataset.resample(epoch, config.sample_strategy, config.sampler_params)
         model, train_loss = train(
             model=model,
             dataloader=train_dataloader,

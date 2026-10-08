@@ -5,6 +5,8 @@ import torch
 from torchvision.transforms.functional import pil_to_tensor
 from torch.utils.data import Dataset
 
+from samplers import get_sampler
+
 
 def pixel_to_camera_rays(pixel_coords, camera_params):
     """
@@ -153,8 +155,8 @@ class NeRFDataset(Dataset):
         self.seed = seed
 
 
-    def _sample_pixels(self, seed):
-        """Randomly sample pixel coordinates and colors from each image"""
+    def _sample_pixels(self, seed, sample_strategy, sampler_params):
+        """Sample pixel coordinates and colors from each image"""
 
         generator = torch.Generator()
         generator.manual_seed(seed)
@@ -162,6 +164,8 @@ class NeRFDataset(Dataset):
         ray_pixels = []
         pixel_colors = []
         all_camera_params = []
+
+        sampler = get_sampler(sample_strategy)
 
         for frame in self.meta:
 
@@ -189,11 +193,13 @@ class NeRFDataset(Dataset):
                     f"in image {image_path}"
                 )
 
-            # Sample unique pixel indices
-            indices = torch.randperm(
-                num_pixels,
+            # Sample pixel indices using selected sampler
+            indices = sampler(
+                image_tensor=image_tensor,
+                num_samples=self.num_rays_per_image,
                 generator=generator,
-            )[:self.num_rays_per_image]
+                **sampler_params,
+            )
 
             # Convert flattened indices to (x, y)
             ys = indices // width
@@ -224,7 +230,7 @@ class NeRFDataset(Dataset):
         return torch.stack(ray_pixels), torch.stack(pixel_colors).transpose(1, 2), all_camera_params
 
 
-    def resample(self, epoch):
+    def resample(self, epoch, sample_strategy, sampler_params):
         """Resample pixels for all images for a new training epoch"""
         seed = self.seed + epoch
 
@@ -232,7 +238,7 @@ class NeRFDataset(Dataset):
         # 2 means x and y coordinates of a pixel
         # Generate sampled pixel colors of shape (n_images, num_rays_per_image, 3)
         # Get modified camera params
-        self.ray_pixels, self.pixel_colors, self.all_camera_params = self._sample_pixels(seed)
+        self.ray_pixels, self.pixel_colors, self.all_camera_params = self._sample_pixels(seed, sample_strategy, sampler_params)
 
 
     def __getitem__(self, index):
