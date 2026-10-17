@@ -55,14 +55,14 @@ def save_history(history, experiment_dir):
     )
 
 
-def plot_camera_poses(meta_train, meta_valid, experiment_dir):
+def plot_camera_poses(meta_train=None, meta_valid=None, experiment_dir=None):
     """
     Plot camera positions for train and validation datasets
 
     Args:
-        meta_train: List of dictionaries containing camera metadata.
-        meta_valid: List of dictionaries containing camera metadata.
-        save_path: Directory where camera_poses.png will be saved.
+        meta_train: List of dictionaries containing camera metadata (empty list if unavailable)
+        meta_valid: List of dictionaries containing camera metadata (empty list if unavailable)
+        experiment_dir: Directory where camera_poses.png will be saved
     """
 
     train_positions = np.array([
@@ -75,26 +75,28 @@ def plot_camera_poses(meta_train, meta_valid, experiment_dir):
         for item in meta_valid
     ])
 
-    fig = plt.figure(figsize=(14, 6))
+    fig = plt.figure(figsize=(18, 6))
 
     # 3D view
-    ax1 = fig.add_subplot(121, projection="3d")
+    ax1 = fig.add_subplot(131, projection="3d")
 
-    ax1.scatter(
-        train_positions[:, 0],
-        train_positions[:, 1],
-        train_positions[:, 2],
-        label="Train",
-        s=20,
-    )
+    if len(train_positions):
+        ax1.scatter(
+            train_positions[:, 0],
+            train_positions[:, 1],
+            train_positions[:, 2],
+            label="Train",
+            s=20,
+        )
 
-    ax1.scatter(
-        valid_positions[:, 0],
-        valid_positions[:, 1],
-        valid_positions[:, 2],
-        label="Valid",
-        s=20,
-    )
+    if len(valid_positions):
+        ax1.scatter(
+            valid_positions[:, 0],
+            valid_positions[:, 1],
+            valid_positions[:, 2],
+            label="Valid",
+            s=20,
+        )
 
     ax1.set_xlabel("X")
     ax1.set_ylabel("Y")
@@ -103,27 +105,54 @@ def plot_camera_poses(meta_train, meta_valid, experiment_dir):
     ax1.legend()
 
     # Top-down view (X-Y)
-    ax2 = fig.add_subplot(122)
+    ax2 = fig.add_subplot(132)
 
-    ax2.scatter(
-        train_positions[:, 0],
-        train_positions[:, 1],
-        label="Train",
-        s=20,
-    )
+    if len(train_positions):
+        ax2.scatter(
+            train_positions[:, 0],
+            train_positions[:, 1],
+            label="Train",
+            s=20,
+        )
 
-    ax2.scatter(
-        valid_positions[:, 0],
-        valid_positions[:, 1],
-        label="Valid",
-        s=20,
-    )
+    if len(valid_positions):
+        ax2.scatter(
+            valid_positions[:, 0],
+            valid_positions[:, 1],
+            label="Valid",
+            s=20,
+        )
 
     ax2.set_xlabel("X")
     ax2.set_ylabel("Y")
     ax2.set_title("Camera positions — top view")
     ax2.axis("equal")
     ax2.legend()
+
+    # Side view along the X axis (Y-Z plane)
+    ax3 = fig.add_subplot(133)
+
+    if len(train_positions):
+        ax3.scatter(
+            train_positions[:, 1],
+            train_positions[:, 2],
+            label="Train",
+            s=20,
+        )
+
+    if len(valid_positions):
+        ax3.scatter(
+            valid_positions[:, 1],
+            valid_positions[:, 2],
+            label="Valid",
+            s=20,
+        )
+
+    ax3.set_xlabel("Y")
+    ax3.set_ylabel("Z")
+    ax3.set_title("Camera positions — side view (along X axis)")
+    ax3.axis("equal")
+    ax3.legend()
 
     plt.tight_layout()
 
