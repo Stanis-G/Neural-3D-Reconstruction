@@ -8,6 +8,33 @@ from torch.utils.data import Dataset
 from samplers import get_sampler
 
 
+def resized_camera(frame, width, height, source_size=None):
+    source_width = frame.get("w") or (source_size[0] if source_size else width)
+    source_height = frame.get("h") or (source_size[1] if source_size else height)
+    scale_x, scale_y = width / source_width, height / source_height
+    return {
+        **frame,
+        "fl_x": frame["fl_x"] * scale_x,
+        "fl_y": frame["fl_y"] * scale_y,
+        "cx": frame.get("cx", source_width / 2) * scale_x,
+        "cy": frame.get("cy", source_height / 2) * scale_y,
+        "w": width,
+        "h": height,
+    }
+
+
+def load_frame_image(path, downsample, white_bkgd):
+    with Image.open(path) as source:
+        size = source.size
+        rgba = source.convert("RGBA")
+        background = Image.new("RGBA", size, "white" if white_bkgd else "black")
+        rgb = Image.alpha_composite(background, rgba).convert("RGB")
+        width, height = (max(1, side // downsample) for side in size)
+        rgb = rgb.resize((width, height), Image.Resampling.LANCZOS)
+        alpha = rgba.getchannel("A").resize((width, height), Image.Resampling.LANCZOS)
+    return rgb, alpha, size
+
+
 def pixel_to_camera_rays(pixel_coords, camera_params):
     """
     Convert pixel coordinates into camera-space ray directions.
@@ -29,8 +56,8 @@ def pixel_to_camera_rays(pixel_coords, camera_params):
     y = pixel_coords[..., 1]
 
     # Principal point
-    cx = w / 2
-    cy = h / 2
+    cx = camera_params.get("cx", w / 2)
+    cy = camera_params.get("cy", h / 2)
 
     # Pixel -> camera space
     camera_directions = torch.stack(
@@ -135,6 +162,7 @@ class NeRFDataset(Dataset):
         num_rays_per_image,
         img_downsample,
         seed,
+        white_bkgd=True,
     ):
         """
         Build NeRF dataset and precompute camera ray directions.
@@ -153,6 +181,7 @@ class NeRFDataset(Dataset):
         self.num_rays_per_image = num_rays_per_image
         self.img_downsample = img_downsample
         self.seed = seed
+        self.white_bkgd = white_bkgd
 
 
     def _sample_pixels(self, seed, sample_strategy, sampler_params):
@@ -171,18 +200,11 @@ class NeRFDataset(Dataset):
 
             # Read image
             image_path = os.path.join(self.data_dir, frame["file_path"])
-            image = Image.open(image_path)
-
+            image, alpha, source_size = load_frame_image(
+                image_path, self.img_downsample, self.white_bkgd
+            )
             width, height = image.size
-
-            # Apply downsampling
-            width //= self.img_downsample
-            height //= self.img_downsample
-
-            image = image.resize((width, height))
-
-            # Convert to tensor: [H, W, C], values in [0, 1]
-            image_tensor = pil_to_tensor(image).float() / 255
+            image_tensor = torch.cat([pil_to_tensor(image), pil_to_tensor(alpha)])
 
             num_pixels = width * height
 
@@ -207,22 +229,13 @@ class NeRFDataset(Dataset):
             pixels = torch.stack((xs, ys), dim=1)
 
             # Extract RGB colors for pixels of current image [C, num_rays_per_image]
-            # Remove alpha channel of image
-            colors = image_tensor[:3, ys, xs]
+            colors = image_tensor[:3, ys, xs].float() / 255
 
             ray_pixels.append(pixels)
             pixel_colors.append(colors)
 
             # Extract and modify camera instrinsics for sampled pixels (since downsampling is applied to image)
-            camera_params = {
-                'transform_matrix': frame['transform_matrix'],
-                'camera_angle_x': frame['camera_angle_x'],
-                'camera_angle_y': frame['camera_angle_y'],
-                'fl_x': frame['fl_x'] / self.img_downsample,
-                'fl_y': frame['fl_y'] / self.img_downsample,
-                'w': width,
-                'h': height,
-            }
+            camera_params = resized_camera(frame, width, height, source_size)
 
             all_camera_params.append(camera_params)
 
@@ -313,10 +326,12 @@ def sample_points_on_ray(
     return points
 
 
-def sample_train_valid(items, valid_frac):
+def sample_train_valid(items, valid_frac, generator=None):
     """Randomly sample train and validation items from a list"""
     num_valid_samples = int(len(items) * valid_frac)
-    indices = torch.randperm(len(items))
+    if not 0 < num_valid_samples < len(items):
+        raise ValueError("The split must leave at least one training and one validation frame.")
+    indices = torch.randperm(len(items), generator=generator)
     train_indices = indices[num_valid_samples:]
     valid_indices = indices[:num_valid_samples]
 

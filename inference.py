@@ -12,14 +12,16 @@ from utils import create_result_dir
 
 
 def load_model(model_path, model_params, device):
-    model = NeRF(**model_params)
-
     state_dict = torch.load(
         model_path,
         map_location=device,
         weights_only=True,
     )
 
+    legacy = "pos_mlp_input_layer.weight" in state_dict
+    model = NeRF(**{**model_params, "legacy": legacy})
+    if legacy:
+        state_dict = {f"coarse.{name}": value for name, value in state_dict.items()}
     model.load_state_dict(state_dict)
     model.to(device)
     model.eval()
@@ -53,7 +55,7 @@ if __name__ == "__main__":
 
     render_frames(
         model=model,
-        meta=meta,
+        meta=meta[125:],
         batch_size=config.batch_size,
         img_downsample=config.img_downsample,
         render_dir = render_dir,

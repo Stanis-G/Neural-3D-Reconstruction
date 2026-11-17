@@ -57,7 +57,10 @@ def foreground_sampler(
     transparent = torch.where(alpha == 0)[0]
     foreground = torch.where(alpha > 0)[0]
 
-    num_transparent = round(num_samples * transparent_fraction)
+    num_transparent = min(
+        len(transparent),
+        max(num_samples - len(foreground), round(num_samples * transparent_fraction)),
+    )
     num_foreground = num_samples - num_transparent
 
     transparent = transparent[

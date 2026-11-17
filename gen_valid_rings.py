@@ -74,6 +74,7 @@ def generate_validation_ring(
     fl_y: float = 2743.0587138734313,
     image_prefix: str = "validation",
     start_angle_deg: float = 0.0,
+    center: Vector3 = (0.0, 0.0, 0.0),
 ) -> dict:
     """Generate a circular camera ring and save transforms.json
 
@@ -87,6 +88,7 @@ def generate_validation_ring(
         fl_x, fl_y: Horizontal and vertical focal lengths in pixels
         image_prefix: Prefix for image paths stored in the JSON
         start_angle_deg: Angular offset of the first camera
+        center: World-space point at the center of the ring and camera target
 
     Returns:
         The generated transforms dictionary
@@ -100,8 +102,6 @@ def generate_validation_ring(
         raise ValueError("num_cameras must be at least 1")
     if width <= 0 or height <= 0 or fl_x <= 0 or fl_y <= 0:
         raise ValueError("Image dimensions and focal lengths must be positive")
-
-    origin = (0, 0, 0)
 
     # Coordinates that vary along the ring
     plane_axes = {
@@ -117,7 +117,7 @@ def generate_validation_ring(
         angle = math.radians(start_angle_deg + 360.0 * i / num_cameras)
 
         # Calculate camera position
-        position = list(origin)
+        position = list(center)
         position[u_axis] += radius * math.cos(angle)
         position[v_axis] += radius * math.sin(angle)
         position[{"x": 0, "y": 1, "z": 2}[axis]] += axis_offset
@@ -125,7 +125,7 @@ def generate_validation_ring(
 
         frames.append({
             "file_path": f"{image_prefix}_{i:03d}.png",
-            "transform_matrix": camera_transform(position, (0.0, 0.0, 0.0)),
+            "transform_matrix": camera_transform(position, center),
             "camera_angle_x": 2.0 * math.atan(width / (2.0 * fl_x)),
             "camera_angle_y": 2.0 * math.atan(height / (2.0 * fl_y)),
             "fl_x": fl_x,
@@ -161,6 +161,8 @@ if __name__ == "__main__":
     parser.add_argument("--fl-y", type=float, default=2743.0587138734313)
     parser.add_argument("--image-prefix", default="camera")
     parser.add_argument("--start-angle-deg", type=float, default=0.0)
+    parser.add_argument("--center", type=float, nargs=3, default=(0.0, 0.0, 0.0),
+                        metavar=("X", "Y", "Z"))
 
     args = parser.parse_args()
 
@@ -176,6 +178,7 @@ if __name__ == "__main__":
         fl_y=args.fl_y,
         image_prefix=args.image_prefix,
         start_angle_deg=args.start_angle_deg,
+        center=tuple(args.center),
     )
     print(f"Saved {args.num_cameras} cameras to {args.output_dir}")
 

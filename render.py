@@ -4,7 +4,7 @@ from tqdm import tqdm
 import torch
 from torchvision.io import write_png
 
-from dataset import generate_rays
+from dataset import generate_rays, resized_camera
 
 
 @torch.no_grad()
@@ -64,15 +64,12 @@ def render_frames(
     for frame_idx, frame in tqdm(enumerate(meta), total=len(meta), desc='Frames', leave=False):
         frame_width = width or frame['w']
         frame_height = height or frame['h']
-        camera_params = {
-            'transform_matrix': frame['transform_matrix'],
-            'camera_angle_x': frame['camera_angle_x'],
-            'camera_angle_y': frame['camera_angle_y'],
-            'fl_x': frame['fl_x'] / img_downsample,
-            'fl_y': frame['fl_y'] / img_downsample,
-            "w": frame_width // img_downsample,
-            "h": frame_height // img_downsample,
-        }
+        camera_params = resized_camera(
+            frame,
+            max(1, frame_width // img_downsample),
+            max(1, frame_height // img_downsample),
+            (frame_width, frame_height),
+        )
         image = render_image(
             model=model,
             camera_params=camera_params,
@@ -84,3 +81,6 @@ def render_frames(
             (image * 255).byte().permute(2, 0, 1),
             os.path.join(render_dir, f"render_{frame_idx:04d}.png"),
         )
+
+        if next(model.parameters()).device.type == 'cuda':
+            torch.cuda.empty_cache()

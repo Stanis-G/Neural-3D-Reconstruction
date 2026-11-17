@@ -10,11 +10,14 @@ nn_params:
   num_pos_mlp_layers: 8 # Number of layers in positional encoder mlp
   num_pos_mlp_layer_neurons: 256 # Number of neurons in inner layers of positional encoder mlp
   num_color_mlp_layer_neurons: 128 # Number of neurons in inner layers of color predicting mlp
-  num_injection_layer: 5 # Index of a layer to inject coords positional encoding
-  negative_slope: 0.2 # Negative slope of LeakyReLU
-  num_samples: 16 # Number of points sampled along one ray
-  near: 4.0 # Near bound of a ray to sample a point
-  far: 10.0 # Far bound of a ray to sample a point
+  num_injection_layer: 5 # Number of hidden layers before the positional skip
+  num_samples: 64 # Coarse samples per ray
+  num_importance: 128 # Additional fine samples per ray
+  white_bkgd: true # Composite targets and rendered rays onto white
+  near: 2.0 # In world units for normalized ray directions
+  far: 6.0
+  scene_center: [0.0, 0.0, 0.0] # Origin for the MLP coordinates
+  scene_scale: 1.0 # Multiplier for the MLP coordinates
   L_coords: 10 # L param for positional encoding of point coords. Defines positional encoding size of coords
   L_direction: 4 # L param for positional encoding of point directions. Defines positional encoding size of directions
 
